@@ -3,10 +3,12 @@
   Complete project details at http://randomnerdtutorials.com  
 *********/
 
+#include <FS.h> //this needs to be first, or it all crashes and burns...
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#include <WiFiManager.h>         // https://github.com/tzapu/WiFiManager
+#include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
+#include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson
 
 // Set web server port number to 80
 WiFiServer server(80);
@@ -15,32 +17,88 @@ WiFiServer server(80);
 String header;
 
 // Auxiliar variables to store the current output state
-String output5State = "off";
-String output4State = "off";
+String outputState = "off";
 
 // Assign output variables to GPIO pins
-const int output5 = 5;
-const int output4 = 4;
+char output[2] = "5";
+char mqtt_server[40];
+
+//flag for saving data
+bool shouldSaveConfig = false;
+
+//callback notifying us of the need to save config
+void saveConfigCallback () {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
+}
 
 void setup() {
   Serial.begin(115200);
   
-  // Initialize the output variables as outputs
-  pinMode(output5, OUTPUT);
-  pinMode(output4, OUTPUT);
-  // Set outputs to LOW
-  digitalWrite(output5, LOW);
-  digitalWrite(output4, LOW);
+  //clean FS, for testing
+  //SPIFFS.format();
+
+  //read configuration from FS json
+  Serial.println("mounting FS...");
+
+  if (SPIFFS.begin()) {
+    Serial.println("mounted file system");
+    if (SPIFFS.exists("/config.json")) {
+      //file exists, reading and loading
+      Serial.println("reading config file");
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+
+        configFile.readBytes(buf.get(), size);
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& json = jsonBuffer.parseObject(buf.get());
+        json.printTo(Serial);
+        if (json.success()) {
+          Serial.println("\nparsed json");
+          strcpy(output, json["output"]);
+          strcpy(mqtt_server, json["mqtt_server"]);
+        } else {
+          Serial.println("failed to load json config");
+        }
+      }
+    }
+  } else {
+    Serial.println("failed to mount FS");
+  }
+  //end read
+  
+  WiFiManagerParameter custom_output("output", "output", output, 2);
+  WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
 
   // WiFiManager
   // Local intialization. Once its business is done, there is no need to keep it around
   WiFiManager wifiManager;
-  
-  // Uncomment and run it once, if you want to erase all the stored information
-  //wifiManager.resetSettings();
+
+  //set config save notify callback
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
   
   // set custom ip for portal
   //wifiManager.setAPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
+
+  //add all your parameters here
+  wifiManager.addParameter(&custom_output);
+  wifiManager.addParameter(&custom_mqtt_server);
+
+  // Uncomment and run it once, if you want to erase all the stored information
+  wifiManager.resetSettings();
+
+  //set minimu quality of signal so it ignores AP's under that quality
+  //defaults to 8%
+  //wifiManager.setMinimumSignalQuality();
+  
+  //sets timeout until configuration portal gets turned off
+  //useful to make it all retry or go to sleep
+  //in seconds
+  //wifiManager.setTimeout(120);
 
   // fetches ssid and pass from eeprom and tries to connect
   // if it does not connect it starts an access point with the specified name
@@ -52,6 +110,33 @@ void setup() {
   
   // if you get here you have connected to the WiFi
   Serial.println("Connected.");
+  strcpy(mqtt_server, custom_mqtt_server.getValue());
+  
+  strcpy(output, custom_output.getValue());
+
+  //save the custom parameters to FS
+  if (shouldSaveConfig) {
+    Serial.println("saving config");
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["output"] = output;
+    json["mqtt_server"] = mqtt_server;
+
+    File configFile = SPIFFS.open("/config.json", "w");
+    if (!configFile) {
+      Serial.println("failed to open config file for writing");
+    }
+
+    json.printTo(Serial);
+    json.printTo(configFile);
+    configFile.close();
+    //end save
+  }
+
+  // Initialize the output variables as outputs
+  pinMode(atoi(output), OUTPUT);
+  // Set outputs to LOW
+  digitalWrite(atoi(output), LOW);;
   
   server.begin();
 }
@@ -79,22 +164,14 @@ void loop(){
             client.println();
             
             // turns the GPIOs on and off
-            if (header.indexOf("GET /5/on") >= 0) {
-              Serial.println("GPIO 5 on");
-              output5State = "on";
-              digitalWrite(output5, HIGH);
-            } else if (header.indexOf("GET /5/off") >= 0) {
-              Serial.println("GPIO 5 off");
-              output5State = "off";
-              digitalWrite(output5, LOW);
-            } else if (header.indexOf("GET /4/on") >= 0) {
-              Serial.println("GPIO 4 on");
-              output4State = "on";
-              digitalWrite(output4, HIGH);
-            } else if (header.indexOf("GET /4/off") >= 0) {
-              Serial.println("GPIO 4 off");
-              output4State = "off";
-              digitalWrite(output4, LOW);
+            if (header.indexOf("GET /output/on") >= 0) {
+              Serial.println("Output on");
+              outputState = "on";
+              digitalWrite(atoi(output), HIGH);
+            } else if (header.indexOf("GET /output/off") >= 0) {
+              Serial.println("Output off");
+              outputState = "off";
+              digitalWrite(atoi(output), LOW);
             }
             
             // Display the HTML web page
@@ -111,23 +188,14 @@ void loop(){
             // Web Page Heading
             client.println("<body><h1>ESP8266 Web Server</h1>");
             
-            // Display current state, and ON/OFF buttons for GPIO 5  
-            client.println("<p>GPIO 5 - State " + output5State + "</p>");
-            // If the output5State is off, it displays the ON button       
-            if (output5State=="off") {
-              client.println("<p><a href=\"/5/on\"><button class=\"button\">ON</button></a></p>");
+            // Display current state, and ON/OFF buttons for the defined GPIO  
+            client.println("<p>Output - State " + outputState + "</p>");
+            // If the outputState is off, it displays the ON button       
+            if (outputState=="off") {
+              client.println("<p><a href=\"/output/on\"><button class=\"button\">ON</button></a></p>");
             } else {
-              client.println("<p><a href=\"/5/off\"><button class=\"button button2\">OFF</button></a></p>");
-            } 
-               
-            // Display current state, and ON/OFF buttons for GPIO 4  
-            client.println("<p>GPIO 4 - State " + output4State + "</p>");
-            // If the output4State is off, it displays the ON button       
-            if (output4State=="off") {
-              client.println("<p><a href=\"/4/on\"><button class=\"button\">ON</button></a></p>");
-            } else {
-              client.println("<p><a href=\"/4/off\"><button class=\"button button2\">OFF</button></a></p>");
-            }
+              client.println("<p><a href=\"/output/off\"><button class=\"button button2\">OFF</button></a></p>");
+            }                  
             client.println("</body></html>");
             
             // The HTTP response ends with another blank line
