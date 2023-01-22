@@ -3,7 +3,7 @@
 /* ^^ these are the include guards */
 
 /* Prototypes for the functions */
-/* Sums two ints */
+/* Setup Wifi */
 void setUpWiFi(void);
 
 #endif
