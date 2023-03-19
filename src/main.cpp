@@ -2,33 +2,49 @@
 
 #include <FS.h> 
 #include <ESP8266WiFi.h>
-#include <SensorManager.h>
+//#include <SensorManager.h>
 #include <PubSubClient.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 #include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson
+//#include "WiFiSetup.h"
 
-#include "WiFiSetup.h"
+
+#define DEBUG true
 
 // Set web server port number to 80
 WiFiServer server(80);
-
 // Variable to store the HTTP request
 String header;
-
 // Auxiliar variables to store the current output state
 String outputState = "off";
-
 // Assign output variables to GPIO pins
-char output[2] = "5";
+char outputpin[2] = "5";
+char inputpin [2] = "5";
 
-//PINS
-#define INPUTPIN 1
+// MQTT IDs
+char espid [10] = "ESP-01_01";
+char ClientId[8] = "-Client";
+char TopicSystem [8] = "/System";
+char TopicSensor [8] = "/Sensor";
+
+// Will be automatically built
+char mqttClientId[17];
+char mqttTopicSystem[17];
+char mqttTopicSensor[17];
+
+
+
+
+/******************************
+******************************
+MQTT CONFIG
+*******************************
+*******************************/
 
 //Set Up MQTT
-
-char mqtt_server[40];
+char mqtt_server[40] = "test.mosquitto.org";
 WiFiClient client;
 PubSubClient MQTTclient(client);
 
@@ -42,7 +58,170 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.println();
 }
 
+/// @brief Publish a Payload to a apotic and Debugs in Serial
+/// @param Topic MQTT Topic
+/// @param Message MQTT Payload
+void mqtt_Publish_print (String Topic, String Message){
+  MQTTclient.publish(Topic.c_str() , Message.c_str());
+  if (DEBUG) {
+    Serial.println("----MQTT PUBLISH----");
+    Serial.println("TOPIC:" + Topic);
+    Serial.println("PAYLOAD:" + Message);
+    Serial.println("--------------------");
+  }
+}
 
+
+/******************************
+******************************
+WIFI CONFIG
+*******************************
+*******************************/
+
+//flag for saving data
+bool shouldSaveConfig = false;
+
+/// @brief callback notifying us of the need to save config
+void saveConfigCallback () {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
+}
+
+/// @brief Sets Up the Wifi Connection and a server if necessary
+void setUpWiFi(void)
+{
+    //clean FS, for testing
+  //SPIFFS.format();
+
+  //read configuration from FS json
+  Serial.println("mounting FS...");
+
+  if (SPIFFS.begin()) {
+    Serial.println("mounted file system");
+    if (SPIFFS.exists("/config.json")) {
+      //file exists, reading and loading
+      Serial.println("reading config file");
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+
+        configFile.readBytes(buf.get(), size);
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& json = jsonBuffer.parseObject(buf.get());
+        json.printTo(Serial);
+        if (json.success()) {
+          Serial.println("\nparsed json");
+          strcpy(outputpin, json["output"]);
+          strcpy(mqtt_server, json["mqtt_server"]);
+        } else {
+          Serial.println("failed to load json config");
+        }
+      }
+    }
+  } else {
+    Serial.println("failed to mount FS");
+  }
+  //end read
+  
+  WiFiManagerParameter custom_output("output", "output", outputpin, 2);
+  WiFiManagerParameter custom_input("input", "input", inputpin, 2);
+  WiFiManagerParameter custom_espid("espid", "espid", espid, 10);
+  WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
+
+  // WiFiManager
+  // Local intialization. Once its business is done, there is no need to keep it around
+  WiFiManager wifiManager;
+
+  //set config save notify callback
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
+  
+  // set custom ip for portal
+  //wifiManager.setAPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
+
+  //add all your parameters here
+  wifiManager.addParameter(&custom_output);
+  wifiManager.addParameter(&custom_mqtt_server);
+
+  // Uncomment and run it once, if you want to erase all the stored information
+  //wifiManager.resetSettings();
+
+  //set minimu quality of signal so it ignores AP's under that quality
+  //defaults to 8%
+  //wifiManager.setMinimumSignalQuality();
+  
+  //sets timeout until configuration portal gets turned off
+  //useful to make it all retry or go to sleep
+  //in seconds
+  //wifiManager.setTimeout(120);
+
+  // fetches ssid and pass from eeprom and tries to connect
+  // if it does not connect it starts an access point with the specified name
+  // here  "AutoConnectAP"
+  // and goes into a blocking loop awaiting configuration
+  wifiManager.autoConnect("CONGIF WLAN - ESP");
+  // or use this for auto generated name ESP + ChipID
+  //wifiManager.autoConnect();
+  
+  // if you get here you have connected to the WiFi
+  Serial.println("Connected.");
+
+  //Update the Parameters
+  strcpy(mqtt_server, custom_mqtt_server.getValue());  
+  strcpy(outputpin, custom_output.getValue());
+  //espid and topics
+  strcpy(espid, custom_espid.getValue());
+  //Client ID
+  strcpy(mqttClientId,espid);
+  strcat(mqttClientId,ClientId);
+  //Sensor Topic
+  strcpy(mqttTopicSensor,espid);
+  strcat(mqttTopicSensor,TopicSensor);
+  //System Topiy
+  strcpy(mqttTopicSystem,espid);
+  strcat(mqttTopicSystem,TopicSystem);
+
+  if (DEBUG){
+    Serial.println(mqttClientId);
+    Serial.println(mqttTopicSensor);
+    Serial.println(mqttTopicSystem);
+  }
+
+  
+
+
+
+
+  //save the custom parameters to FS
+  if (shouldSaveConfig) {
+    Serial.println("saving config");
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["output"] = outputpin;
+    json["mqtt_server"] = mqtt_server;
+
+    File configFile = SPIFFS.open("/config.json", "w");
+    if (!configFile) {
+      Serial.println("failed to open config file for writing");
+    }
+
+    json.printTo(Serial);
+    json.printTo(configFile);
+    configFile.close();
+    
+    //end save
+  }
+}
+
+/******************************
+******************************
+ESP STANDARD FUNCTIONS
+*******************************
+*******************************/
+
+/// @brief Device Setup after boot
 void setup() {
     //Serial Start
     Serial.begin(115200);
@@ -54,25 +233,28 @@ void setup() {
     Serial.println(mqtt_server);
     MQTTclient.setServer(mqtt_server,1883);
     MQTTclient.setCallback(callback);
-    MQTTclient.connect("ESP-01_2-Client");
-    MQTTclient.publish("ESP-01_2/state", "Up and running");
-    Serial.println("ESP-01_2/state, Up and running");
-
+    MQTTclient.connect(mqttClientId);
+    mqtt_Publish_print(mqttTopicSystem, "Staurt-Up Done"); 
+    
     // Initialize the Pins
-    pinMode(atoi(output), OUTPUT);
-    pinMode(INPUTPIN, INPUT);
+    pinMode(atoi(outputpin), OUTPUT);
+    pinMode(atoi(inputpin), INPUT);
 
     // Set outputs to LOW
-    digitalWrite(atoi(output), LOW);;
+    digitalWrite(atoi(outputpin), LOW);;
     
     server.begin();
+
 }
 
+/// @brief Looping Code
 void loop(){
-
-  MQTTclient.publish("ESP-01_2/state", "Sent");
-  Serial.println("ESP-01_2/state, Sent");
-  delay(10000);
-  Measure(MQTTclient);
-  
+  delay(5000);
+ // mqtt_Publish_print("ESP-01_2/System", "Looping");
+  if (digitalRead(atoi(inputpin)) == HIGH)
+  {
+    mqtt_Publish_print(mqttTopicSensor, "Is High"); 
+  } else {
+    mqtt_Publish_print(mqttTopicSensor, "Is Low"); 
+  }
 }
