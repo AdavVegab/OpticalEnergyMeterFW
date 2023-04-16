@@ -28,12 +28,26 @@ char espid [10] = "ESP-01_01";
 char ClientId[8] = "-Client";
 char TopicSystem [8] = "/System";
 char TopicSensor [8] = "/Sensor";
+char TopicPulses [8] = "/Pulses";
 
 // Will be automatically built
 char mqttClientId[17];
 char mqttTopicSystem[17];
 char mqttTopicSensor[17];
+char mqttTopicPulses[17];
 
+// Pulse Variables
+int maxPulseLenght = 50; // ms
+int minPulseLenght = 20; // ms
+long pulseLengt;
+long pulseCount;
+long totalCount;
+bool pulseState;
+
+// Time Keeping Vars
+long timeElapsed, time1, time2, pulseBegin, measurementBegin, lastPulse;
+bool measurement;
+long measurementPeriod = 60*1e3; // minute in ms
 
 
 
@@ -179,9 +193,12 @@ void setUpWiFi(void)
   //Sensor Topic
   strcpy(mqttTopicSensor,espid);
   strcat(mqttTopicSensor,TopicSensor);
-  //System Topiy
+  //System TopiC
   strcpy(mqttTopicSystem,espid);
   strcat(mqttTopicSystem,TopicSystem);
+  //Pulses TopiC
+  strcpy(mqttTopicPulses,espid);
+  strcat(mqttTopicPulses,TopicPulses);
 
   if (DEBUG){
     Serial.println(mqttClientId);
@@ -251,10 +268,49 @@ void setup() {
 void loop(){
   delay(5000);
  // mqtt_Publish_print("ESP-01_2/System", "Looping");
-  if (digitalRead(atoi(inputpin)) == HIGH)
-  {
-    mqtt_Publish_print(mqttTopicSensor, "Is High"); 
-  } else {
-    mqtt_Publish_print(mqttTopicSensor, "Is Low"); 
+  // if (digitalRead(atoi(inputpin)) == HIGH)
+  // {
+  //   mqtt_Publish_print(mqttTopicSensor, "Is High"); 
+  // } else {
+  //   mqtt_Publish_print(mqttTopicSensor, "Is Low"); 
+  // }
+
+  if (pulseState == false){
+    if (CheckInputPin() == false){  // Pulse Started
+        pulseState = true;
+        pulseBegin = millis();  // Recird Starting time
+    }
+  }
+
+  if (pulseState == true && CheckInputPin() == true){ //Pulse Ended
+    pulseLengt = millis() - pulseBegin; // Calculate the lenght
+    if (pulseLengt < minPulseLenght || pulseLengt > maxPulseLenght){  //Invalid Lenght
+      pulseState = false;
+    } else {  // Valid Pulse! 
+      if (measurement == false) // Start the measurenment
+      {
+        measurementBegin = millis(); // Record the starting time
+        measurement == true;
+      }
+      pulseState = false;         // end pulse state
+      pulseCount++;               // increase counters
+      totalCount++;
+      lastPulse = millis();       // measure te moment of the last pulse in the measurement
+    }
+  }
+
+  if (measurement == true && millis() > (measurementBegin + measurementPeriod)){
+    mqtt_Publish_print(mqttTopicSensor,String(pulseCount));
+    // clean up values
+    pulseCount = 0; // neu Count
+    measurement = false;  //new Measuremen
+  }
+}
+
+bool CheckInputPin(){
+  if (digitalRead(atoi(inputpin)) == HIGH){
+    return true;
+  }else{
+    return false;
   }
 }
