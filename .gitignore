@@ -11,3 +11,9 @@
 .pio/build/project.checksum
 .vscode/c_cpp_properties.json
 .vscode/settings.json
+.pio/build/project.checksum
+.pio/build/nodemcuv2/idedata.json
+.vscode/c_cpp_properties.json
+.vscode/extensions.json
+.vscode/launch.json
+.vscode/settings.json
