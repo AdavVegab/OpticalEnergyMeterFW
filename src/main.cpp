@@ -29,15 +29,17 @@ char ClientId[8] = "-Client";
 char TopicSystem [8] = "/System";
 char TopicSensor [8] = "/Sensor";
 char TopicPulses [8] = "/Pulses";
+char TopicPower [8] =  "/Powerh";
 
 // Will be automatically built
 char mqttClientId[17];
 char mqttTopicSystem[17];
 char mqttTopicSensor[17];
 char mqttTopicPulses[17];
+char mqttTopicPower[17];
 
 // Pulse Variables
-int maxPulseLenght = 50; // ms
+int maxPulseLenght = 200; // ms (50 standard)
 int minPulseLenght = 20; // ms
 long pulseLengt;
 long pulseCount;
@@ -47,8 +49,10 @@ bool pulseState;
 // Time Keeping Vars
 long timeElapsed, time1, time2, pulseBegin, measurementBegin, lastPulse;
 bool measurement;
-long measurementPeriod = 60*1e3; // minute in ms
-
+long minute = 60*1e3;
+long hour = minute *60;
+//long measurementPeriod = minute; // minute in ms
+long measurementPeriod = minute/6;
 
 
 /******************************
@@ -76,6 +80,15 @@ void callback(char* topic, byte* payload, unsigned int length) {
 /// @param Topic MQTT Topic
 /// @param Message MQTT Payload
 void mqtt_Publish_print (String Topic, String Message){
+  //Check if connected
+  if (!MQTTclient.connected()) {
+  Serial.println("Attempting MQTT connection...");
+  if (MQTTclient.connect(mqttClientId)) {
+    Serial.println("Connected to MQTT server.");
+  } else {
+    Serial.println("Failed to connect to MQTT server.");
+  }
+}
   MQTTclient.publish(Topic.c_str() , Message.c_str());
   if (DEBUG) {
     Serial.println("----MQTT PUBLISH----");
@@ -199,6 +212,10 @@ void setUpWiFi(void)
   //Pulses TopiC
   strcpy(mqttTopicPulses,espid);
   strcat(mqttTopicPulses,TopicPulses);
+  //Powerh TopiC
+  strcpy(mqttTopicPower,espid);
+  strcat(mqttTopicPower,TopicPower);
+
 
   if (DEBUG){
     Serial.println(mqttClientId);
@@ -229,6 +246,14 @@ void setUpWiFi(void)
     configFile.close();
     
     //end save
+  }
+}
+
+bool CheckInputPin(){
+  if (digitalRead(atoi(inputpin)) == HIGH){
+    return true;
+  }else{
+    return false;
   }
 }
 
@@ -266,7 +291,6 @@ void setup() {
 
 /// @brief Looping Code
 void loop(){
-  delay(5000);
  // mqtt_Publish_print("ESP-01_2/System", "Looping");
   // if (digitalRead(atoi(inputpin)) == HIGH)
   // {
@@ -279,6 +303,7 @@ void loop(){
     if (CheckInputPin() == false){  // Pulse Started
         pulseState = true;
         pulseBegin = millis();  // Recird Starting time
+        Serial.println("Pulse Started");
     }
   }
 
@@ -286,11 +311,20 @@ void loop(){
     pulseLengt = millis() - pulseBegin; // Calculate the lenght
     if (pulseLengt < minPulseLenght || pulseLengt > maxPulseLenght){  //Invalid Lenght
       pulseState = false;
+      Serial.println("-----------Invalid Pulse:");
+      Serial.println(pulseLengt);
+      Serial.println("-----------");
+      
     } else {  // Valid Pulse! 
+      Serial.println("-----------Valid Pulse:");
+      Serial.println(pulseLengt);
+      Serial.println("-----------");
       if (measurement == false) // Start the measurenment
       {
         measurementBegin = millis(); // Record the starting time
-        measurement == true;
+        measurement = true;
+        Serial.println("Starting Measurement at:");
+        Serial.println(measurementBegin);        
       }
       pulseState = false;         // end pulse state
       pulseCount++;               // increase counters
@@ -300,17 +334,16 @@ void loop(){
   }
 
   if (measurement == true && millis() > (measurementBegin + measurementPeriod)){
-    mqtt_Publish_print(mqttTopicSensor,String(pulseCount));
+    Serial.println(MQTTclient.connected());
+    mqtt_Publish_print(mqttTopicPulses,String(pulseCount));
+    //calculate Power
+    timeElapsed = lastPulse - pulseLengt; // The last Pulse defines the actual period
+    int hourCount = (pulseCount -1) * ((hour)/(timeElapsed - pulseLengt)); //the last pulse must be substracted, because we should measure until the beginning of the pulse
+    mqtt_Publish_print(mqttTopicPower,String(hourCount));
+
     // clean up values
     pulseCount = 0; // neu Count
-    measurement = false;  //new Measuremen
+    measurement = false;  //new Measurement
   }
 }
 
-bool CheckInputPin(){
-  if (digitalRead(atoi(inputpin)) == HIGH){
-    return true;
-  }else{
-    return false;
-  }
-}
