@@ -39,8 +39,8 @@ char mqttTopicPulses[17];
 char mqttTopicPower[17];
 
 // Pulse Variables
-int maxPulseLenght = 200; // ms (50 standard)
-int minPulseLenght = 20; // ms
+int maxPulseLenght = 50; // ms (50 standard)
+int minPulseLenght = 15; // ms
 long pulseLengt;
 long pulseCount;
 long totalCount;
@@ -52,7 +52,7 @@ bool measurement;
 long minute = 60*1e3;
 long hour = minute *60;
 //long measurementPeriod = minute; // minute in ms
-long measurementPeriod = minute/6;
+long measurementPeriod = minute;
 
 
 /******************************
