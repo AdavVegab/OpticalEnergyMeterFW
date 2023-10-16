@@ -4,3 +4,7 @@
 .vscode/
 .vscode/c_cpp_properties.json
 .vscode/c_cpp_properties.json
+.pio/libdeps/nodemcuv2/Unity/auto/generate_test_runner.rb
+.pio/libdeps/nodemcuv2/Unity/src/unity.c
+.pio/libdeps/nodemcuv2/Unity/src/unity.h
+.pio/libdeps/nodemcuv2/Unity/src/unity_internals.h
