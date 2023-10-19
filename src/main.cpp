@@ -20,7 +20,7 @@ String header;
 // Auxiliar variables to store the current output state
 String outputState = "off";
 // Assign output variables to GPIO pins
-char outputpin[2] = "5";
+char outputpin[2] = "2";
 char inputpin [2] = "5";
 
 // MQTT IDs
@@ -40,7 +40,7 @@ char mqttTopicPower[17];
 
 // Pulse Variables
 int maxPulseLenght = 50; // ms (50 standard)
-int minPulseLenght = 15; // ms
+int minPulseLenght = 1; // ms
 long pulseLengt;
 long pulseCount;
 long totalCount;
@@ -282,10 +282,12 @@ void setup() {
     pinMode(atoi(outputpin), OUTPUT);
     pinMode(atoi(inputpin), INPUT);
 
-    // Set outputs to LOW
-    digitalWrite(atoi(outputpin), LOW);;
-    
+       
     server.begin();
+
+    // Turn Off Info LED
+    digitalWrite(atoi(outputpin), HIGH);;
+
 
 }
 
