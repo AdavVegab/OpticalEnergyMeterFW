@@ -1,15 +1,11 @@
 //Include
-
 #include <FS.h> 
 #include <ESP8266WiFi.h>
-//#include <SensorManager.h>
 #include <PubSubClient.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 #include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson
-//#include "WiFiSetup.h"
-
 
 #define DEBUG true
 
@@ -56,9 +52,7 @@ long measurementPeriod = minute;
 
 
 /******************************
-******************************
 MQTT CONFIG
-*******************************
 *******************************/
 
 //Set Up MQTT
@@ -98,11 +92,8 @@ void mqtt_Publish_print (String Topic, String Message){
   }
 }
 
-
 /******************************
-******************************
 WIFI CONFIG
-*******************************
 *******************************/
 
 //flag for saving data
@@ -175,22 +166,7 @@ void setUpWiFi(void)
   // Uncomment and run it once, if you want to erase all the stored information
   //wifiManager.resetSettings();
 
-  //set minimu quality of signal so it ignores AP's under that quality
-  //defaults to 8%
-  //wifiManager.setMinimumSignalQuality();
-  
-  //sets timeout until configuration portal gets turned off
-  //useful to make it all retry or go to sleep
-  //in seconds
-  //wifiManager.setTimeout(120);
-
-  // fetches ssid and pass from eeprom and tries to connect
-  // if it does not connect it starts an access point with the specified name
-  // here  "AutoConnectAP"
-  // and goes into a blocking loop awaiting configuration
   wifiManager.autoConnect("CONGIF WLAN - ESP");
-  // or use this for auto generated name ESP + ChipID
-  //wifiManager.autoConnect();
   
   // if you get here you have connected to the WiFi
   Serial.println("Connected.");
@@ -223,11 +199,6 @@ void setUpWiFi(void)
     Serial.println(mqttTopicSystem);
   }
 
-  
-
-
-
-
   //save the custom parameters to FS
   if (shouldSaveConfig) {
     Serial.println("saving config");
@@ -258,9 +229,7 @@ bool CheckInputPin(){
 }
 
 /******************************
-******************************
 ESP STANDARD FUNCTIONS
-*******************************
 *******************************/
 
 /// @brief Device Setup after boot
@@ -293,14 +262,6 @@ void setup() {
 
 /// @brief Looping Code
 void loop(){
- // mqtt_Publish_print("ESP-01_2/System", "Looping");
-  // if (digitalRead(atoi(inputpin)) == HIGH)
-  // {
-  //   mqtt_Publish_print(mqttTopicSensor, "Is High"); 
-  // } else {
-  //   mqtt_Publish_print(mqttTopicSensor, "Is Low"); 
-  // }
-
   if (pulseState == false){
     if (CheckInputPin() == false){  // Pulse Started
         pulseState = true;
